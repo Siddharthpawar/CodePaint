@@ -1,0 +1,5 @@
+{
+  "name": "Copy of CodePaint",
+  "description": "A multimodal tool where drawing on a canvas auto-generates code. Draw flowcharts for logic or wireframes for UI components and let Gemini write the code for you.",
+  "requestFramePermissions": []
+}
