@@ -40,7 +40,8 @@ export interface ShapeDrawing extends BaseDrawing {
 
 export interface TextDrawing extends BaseDrawing {
   tool: Tool.TEXT;
-  position: Point;
+  start: Point;
+  end: Point;
   text: string;
   fontSize: number;
 }

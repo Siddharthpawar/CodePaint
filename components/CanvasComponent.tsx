@@ -19,8 +19,16 @@ export interface CanvasRef {
 
 const CanvasComponent = forwardRef<CanvasRef, CanvasComponentProps>(({ tool, color, lineWidth, scale, panOffset, isPanning, onDrawingChange, drawingObjects }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentDrawing, setCurrentDrawing] = useState<DrawingObject | null>(null);
+  const [textEditor, setTextEditor] = useState<{ object: TextDrawing; value: string } | null>(null);
+
+  useEffect(() => {
+    if (textEditor && textAreaRef.current) {
+        textAreaRef.current.focus();
+    }
+  }, [textEditor]);
 
   const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number, dpr: number) => {
     ctx.fillStyle = '#ffffff';
@@ -121,7 +129,17 @@ const CanvasComponent = forwardRef<CanvasRef, CanvasComponentProps>(({ tool, col
 
     [...drawingObjects, currentDrawing].forEach(obj => {
       if (!obj) return;
-      drawObject(context, obj);
+      if (obj === currentDrawing && obj.tool === Tool.TEXT) {
+        context.save();
+        context.setLineDash([6, 4]);
+        context.strokeStyle = obj.color;
+        context.lineWidth = 1 / scale;
+        const tempBox = obj as TextDrawing;
+        context.strokeRect(tempBox.start.x, tempBox.start.y, tempBox.end.x - tempBox.start.x, tempBox.end.y - tempBox.start.y);
+        context.restore();
+      } else {
+        drawObject(context, obj);
+      }
     });
 
     context.restore();
@@ -181,30 +199,26 @@ const CanvasComponent = forwardRef<CanvasRef, CanvasComponentProps>(({ tool, col
     const y = (e.clientY - rect.top - panOffset.y) / scale;
     return { x, y };
   };
+  
+  const commitText = () => {
+    if (!textEditor) return;
+    const { object, value } = textEditor;
+    if (value.trim() !== '') {
+        const newTextObject: TextDrawing = { ...object, text: value };
+        onDrawingChange([...drawingObjects, newTextObject]);
+    }
+    setTextEditor(null);
+  };
 
   const startDrawing = (e: React.MouseEvent) => {
     if (e.button !== 0 || isPanning) return;
-    const pos = getMousePos(e);
-
-    // Text tool is a single-click action, handle it separately.
-    if (tool === Tool.TEXT) {
-        const text = window.prompt("Enter text:");
-        if (text && text.trim() !== '') {
-            const newTextObject: TextDrawing = {
-                id: new Date().toISOString(),
-                tool: Tool.TEXT,
-                color,
-                lineWidth, // Not used for text, but part of base type
-                position: pos,
-                text: text,
-                fontSize: 16,
-            };
-            onDrawingChange([...drawingObjects, newTextObject]);
-        }
-        return; // End here for text tool, do not set isDrawing
+    
+    if (textEditor) {
+        commitText();
+        return;
     }
 
-    // For all other tools, which are drag-based
+    const pos = getMousePos(e);
     setIsDrawing(true);
     
     const baseProps = {
@@ -215,6 +229,15 @@ const CanvasComponent = forwardRef<CanvasRef, CanvasComponentProps>(({ tool, col
 
     if (tool === Tool.PENCIL || tool === Tool.ERASER) {
         setCurrentDrawing({ ...baseProps, tool, points: [pos] } as PencilDrawing);
+    } else if (tool === Tool.TEXT) {
+        setCurrentDrawing({
+            ...baseProps,
+            tool,
+            start: pos,
+            end: pos,
+            text: '',
+            fontSize: 16,
+        } as TextDrawing);
     } else { // Rectangle, Ellipse, Arrow, Line
         setCurrentDrawing({ ...baseProps, tool, start: pos, end: pos } as ShapeDrawing);
     }
@@ -233,11 +256,18 @@ const CanvasComponent = forwardRef<CanvasRef, CanvasComponentProps>(({ tool, col
 
   const stopDrawing = () => {
     if (!isDrawing || !currentDrawing) return;
-    setIsDrawing(false);
-    if(currentDrawing.tool !== Tool.TEXT) {
+    
+    if (currentDrawing.tool === Tool.TEXT) {
+        const asText = currentDrawing as TextDrawing;
+        if (asText.start.x !== asText.end.x && asText.start.y !== asText.end.y) {
+            setTextEditor({ object: asText, value: '' });
+        }
+        setCurrentDrawing(null);
+    } else {
         onDrawingChange([...drawingObjects, currentDrawing]);
+        setCurrentDrawing(null);
     }
-    setCurrentDrawing(null);
+    setIsDrawing(false);
   };
   
   const getObjectBounds = (obj: DrawingObject) => {
@@ -253,13 +283,6 @@ const CanvasComponent = forwardRef<CanvasRef, CanvasComponentProps>(({ tool, col
         });
         break;
       case Tool.TEXT:
-        // A simple approximation for bounding box of text
-        const approxCharWidth = obj.fontSize / 1.5;
-        minX = obj.position.x;
-        minY = obj.position.y - obj.fontSize;
-        maxX = obj.position.x + obj.text.length * approxCharWidth;
-        maxY = obj.position.y;
-        break;
       case Tool.RECTANGLE:
       case Tool.ELLIPSE:
       case Tool.ARROW:
@@ -289,31 +312,39 @@ const CanvasComponent = forwardRef<CanvasRef, CanvasComponentProps>(({ tool, col
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     
-    ctx.beginPath();
     switch(obj.tool) {
         case Tool.PENCIL:
         case Tool.ERASER:
             if (obj.points.length < 2) break;
+            ctx.beginPath();
             ctx.moveTo(obj.points[0].x, obj.points[0].y);
             for(let i=1; i < obj.points.length; i++) {
                 ctx.lineTo(obj.points[i].x, obj.points[i].y);
             }
+            ctx.stroke();
             break;
         case Tool.RECTANGLE:
+            ctx.beginPath();
             ctx.rect(obj.start.x, obj.start.y, obj.end.x - obj.start.x, obj.end.y - obj.start.y);
+            ctx.stroke();
             break;
         case Tool.LINE:
+            ctx.beginPath();
             ctx.moveTo(obj.start.x, obj.start.y);
             ctx.lineTo(obj.end.x, obj.end.y);
+            ctx.stroke();
             break;
         case Tool.ELLIPSE:
+            ctx.beginPath();
             const centerX = obj.start.x + (obj.end.x - obj.start.x) / 2;
             const centerY = obj.start.y + (obj.end.y - obj.start.y) / 2;
             const radiusX = Math.abs((obj.end.x - obj.start.x) / 2);
             const radiusY = Math.abs((obj.end.y - obj.start.y) / 2);
             ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+            ctx.stroke();
             break;
         case Tool.ARROW:
+            ctx.beginPath();
             const headlen = 10 / scale;
             const angle = Math.atan2(obj.end.y - obj.start.y, obj.end.x - obj.start.x);
             ctx.moveTo(obj.start.x, obj.start.y);
@@ -321,32 +352,110 @@ const CanvasComponent = forwardRef<CanvasRef, CanvasComponentProps>(({ tool, col
             ctx.lineTo(obj.end.x - headlen * Math.cos(angle - Math.PI / 6), obj.end.y - headlen * Math.sin(angle - Math.PI / 6));
             ctx.moveTo(obj.end.x, obj.end.y);
             ctx.lineTo(obj.end.x - headlen * Math.cos(angle + Math.PI / 6), obj.end.y - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.stroke();
             break;
         case Tool.TEXT:
-            const fontSize = forExport ? obj.fontSize : obj.fontSize / scale;
-            ctx.font = `${fontSize}px sans-serif`;
-            ctx.fillText(obj.text, obj.position.x, obj.position.y);
+            if (!obj.text) break;
+            const fontSize = forExport ? obj.fontSize : obj.fontSize;
+            ctx.font = `${fontSize / (forExport ? 1 : scale)}px sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+
+            const x = Math.min(obj.start.x, obj.end.x);
+            const y = Math.min(obj.start.y, obj.end.y);
+            const width = Math.abs(obj.start.x - obj.end.x);
+            const padding = 4;
+            let currentY = y + padding;
+
+            const lines = obj.text.split('\n');
+            lines.forEach(line => {
+                const words = line.split(' ');
+                let currentLine = '';
+                for (let i = 0; i < words.length; i++) {
+                    const testLine = currentLine ? `${currentLine} ${words[i]}` : words[i];
+                    const metrics = ctx.measureText(testLine);
+                    if (metrics.width > width - (padding * 2) && currentLine) {
+                        ctx.fillText(currentLine, x + padding, currentY);
+                        currentLine = words[i];
+                        currentY += (fontSize / (forExport ? 1 : scale)) * 1.2;
+                    } else {
+                        currentLine = testLine;
+                    }
+                }
+                if (currentLine) {
+                    ctx.fillText(currentLine, x + padding, currentY);
+                    currentY += (fontSize / (forExport ? 1 : scale)) * 1.2;
+                }
+            });
             break;
-    }
-    if (obj.tool !== Tool.TEXT) {
-        ctx.stroke();
     }
     
     ctx.globalCompositeOperation = 'source-over';
   };
+  
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (textEditor) {
+        setTextEditor({ ...textEditor, value: e.target.value });
+    }
+  };
 
   return (
-    <canvas
-      ref={canvasRef}
-      onMouseDown={startDrawing}
-      onMouseMove={draw}
-      onMouseUp={stopDrawing}
-      onMouseLeave={stopDrawing}
-      className="w-full h-full"
-      style={{ 
-        touchAction: 'none',
-      }}
-    />
+    <div className="w-full h-full relative">
+        <canvas
+            ref={canvasRef}
+            onMouseDown={startDrawing}
+            onMouseMove={draw}
+            onMouseUp={stopDrawing}
+            onMouseLeave={stopDrawing}
+            className="w-full h-full"
+            style={{ 
+                touchAction: 'none',
+            }}
+        />
+        {textEditor && (() => {
+            const { object } = textEditor;
+            const x = Math.min(object.start.x, object.end.x);
+            const y = Math.min(object.start.y, object.end.y);
+            const width = Math.abs(object.start.x - object.end.x);
+            const height = Math.abs(object.start.y - object.end.y);
+            
+            const style: React.CSSProperties = {
+                position: 'absolute',
+                top: `${y * scale + panOffset.y}px`,
+                left: `${x * scale + panOffset.x}px`,
+                width: `${width * scale}px`,
+                height: `${height * scale}px`,
+                border: '1px dashed #007aff',
+                background: 'rgba(255, 255, 255, 0.9)',
+                color: color,
+                fontFamily: 'sans-serif',
+                fontSize: `${object.fontSize}px`,
+                lineHeight: '1.2',
+                padding: '4px',
+                margin: 0,
+                resize: 'none',
+                outline: 'none',
+                boxSizing: 'border-box',
+                overflowY: 'auto',
+                whiteSpace: 'pre-wrap',
+            };
+            
+            return (
+                <textarea
+                    ref={textAreaRef}
+                    style={style}
+                    value={textEditor.value}
+                    onChange={handleTextChange}
+                    onBlur={commitText}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                            commitText();
+                        }
+                    }}
+                />
+            );
+        })()}
+    </div>
   );
 });
 
