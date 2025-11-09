@@ -48,6 +48,13 @@ export interface TextDrawing extends BaseDrawing {
 
 export type DrawingObject = PencilDrawing | ShapeDrawing | TextDrawing;
 
+// --- New Canvas Page Type ---
+export type CanvasPage = {
+  id: string;
+  name: string;
+  objects: DrawingObject[];
+};
+
 // --- New Chat Types ---
 
 export type ChatMessage = {

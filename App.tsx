@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Tool, GenerationMode, DrawingObject, Point, ChatMessage } from './types';
+import { Tool, GenerationMode, DrawingObject, Point, ChatMessage, CanvasPage } from './types';
 import { Header } from './components/Header';
 import { LeftSidebar } from './components/LeftSidebar';
 import { TopToolbar } from './components/TopToolbar';
@@ -7,6 +7,7 @@ import CanvasComponent, { CanvasRef } from './components/CanvasComponent';
 import { OutputDisplay } from './components/OutputDisplay';
 import { generateContent } from './services/geminiService';
 import { getCodeLogicInstruction, getUIComponentInstruction, getFollowUpInstruction, ZoomInIcon, ZoomOutIcon, ResetZoomIcon } from './constants';
+import { CanvasTabs } from './components/CanvasTabs';
 
 function App() {
   const [activeTool, setActiveTool] = useState<Tool>(Tool.PENCIL);
@@ -26,7 +27,11 @@ function App() {
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
 
-  const [drawingObjects, setDrawingObjects] = useState<DrawingObject[]>([]);
+  const [pages, setPages] = useState<CanvasPage[]>([
+    { id: `page-${Date.now()}`, name: 'Page 1', objects: [] }
+  ]);
+  const [activePageIndex, setActivePageIndex] = useState<number>(0);
+
   const [isOutputCollapsed, setIsOutputCollapsed] = useState(false);
   
   const [isImageAttached, setIsImageAttached] = useState(false);
@@ -34,12 +39,25 @@ function App() {
   const canvasComponentRef = useRef<CanvasRef>(null);
   const mainContainerRef = useRef<HTMLElement>(null);
 
+  const handleDrawingChange = useCallback((newObjects: DrawingObject[]) => {
+    setPages(currentPages => {
+      const newPages = [...currentPages];
+      if (newPages[activePageIndex]) {
+        newPages[activePageIndex] = {
+          ...newPages[activePageIndex],
+          objects: newObjects,
+        };
+      }
+      return newPages;
+    });
+  }, [activePageIndex]);
+
   const handleClearCanvas = useCallback(() => {
-    canvasComponentRef.current?.clear();
+    handleDrawingChange([]);
     setChatHistory([]);
     setError(null);
     setIsImageAttached(false);
-  }, []);
+  }, [handleDrawingChange]);
 
   const handleGenerate = useCallback(async () => {
     if (isImageAttached) return; // Should be disabled, but as a safeguard
@@ -75,7 +93,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [language, generationMode, uiFramework, drawingObjects, isOutputCollapsed, isImageAttached]);
+  }, [language, generationMode, uiFramework, pages, activePageIndex, isOutputCollapsed, isImageAttached]);
   
   const handleSendMessage = useCallback(async (message: string, image?: { base64: string, mimeType: string }) => {
     // If an image is attached, it's a new primary generation, not a follow-up.
@@ -236,6 +254,21 @@ function App() {
     setPanOffset({ x: newPanX, y: newPanY });
   }
 
+  const handleAddPage = () => {
+    const newPageNumber = pages.length + 1;
+    const newPage: CanvasPage = {
+      id: `page-${Date.now()}`,
+      name: `Page ${newPageNumber}`,
+      objects: [],
+    };
+    setPages([...pages, newPage]);
+    setActivePageIndex(pages.length); // Switch to the new page
+  };
+
+  const handleSelectPage = (index: number) => {
+    setActivePageIndex(index);
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen bg-gray-100 font-sans overflow-hidden">
       <Header
@@ -262,6 +295,12 @@ function App() {
             uiFramework={uiFramework}
             setUiFramework={setUiFramework}
           />
+          <CanvasTabs
+            pages={pages}
+            activePageIndex={activePageIndex}
+            onSelectPage={handleSelectPage}
+            onAddPage={handleAddPage}
+          />
           <main 
             ref={mainContainerRef}
             className="flex-1 relative bg-gray-100"
@@ -281,8 +320,8 @@ function App() {
                     scale={scale}
                     panOffset={panOffset}
                     isPanning={isPanning}
-                    drawingObjects={drawingObjects}
-                    onDrawingChange={setDrawingObjects}
+                    drawingObjects={pages[activePageIndex]?.objects || []}
+                    onDrawingChange={handleDrawingChange}
                 />
             </div>
             {isImageAttached && (
