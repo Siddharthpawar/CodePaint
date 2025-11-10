@@ -1,13 +1,14 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Tool, GenerationMode, DrawingObject, Point, ChatMessage, CanvasPage } from './types';
+import { Tool, GenerationMode, DrawingObject, Point, ChatMessage, CanvasPage, FileTreeNode } from './types';
 import { Header } from './components/Header';
 import { LeftSidebar } from './components/LeftSidebar';
 import { TopToolbar } from './components/TopToolbar';
 import CanvasComponent, { CanvasRef } from './components/CanvasComponent';
 import { OutputDisplay } from './components/OutputDisplay';
 import { generateContent } from './services/geminiService';
-import { getCodeLogicInstruction, getUIComponentInstruction, getFollowUpInstruction, ZoomInIcon, ZoomOutIcon, ResetZoomIcon } from './constants';
+import { getCodeLogicInstruction, getUIComponentInstruction, getFollowUpInstruction, ZoomInIcon, ZoomOutIcon, ResetZoomIcon, FolderIcon } from './constants';
 import { CanvasTabs } from './components/CanvasTabs';
+import { FilePanel } from './components/GitHubPanel';
 
 function App() {
   const [activeTool, setActiveTool] = useState<Tool>(Tool.PENCIL);
@@ -31,10 +32,24 @@ function App() {
     { id: `page-${Date.now()}`, name: 'Page 1', objects: [] }
   ]);
   const [activePageIndex, setActivePageIndex] = useState<number>(0);
-
-  const [isOutputCollapsed, setIsOutputCollapsed] = useState(false);
   
   const [isImageAttached, setIsImageAttached] = useState(false);
+
+  // --- New File System State ---
+  const [rightPanelTab, setRightPanelTab] = useState<'chat' | 'files'>('chat');
+  const [isFolderOpen, setIsFolderOpen] = useState(false);
+  const [folderName, setFolderName] = useState('');
+  const [activeFileContent, setActiveFileContent] = useState<string | null>(null);
+  
+  const isOutputCollapsed = rightPanelTab !== 'chat' && rightPanelTab !== 'files';
+  const toggleOutput = () => {
+    if (isOutputCollapsed) {
+      setRightPanelTab('chat');
+    } else {
+      setRightPanelTab(null as any); // hack to collapse
+    }
+  };
+
 
   const canvasComponentRef = useRef<CanvasRef>(null);
   const mainContainerRef = useRef<HTMLElement>(null);
@@ -61,9 +76,8 @@ function App() {
 
   const handleGenerate = useCallback(async () => {
     if (isImageAttached) return; // Should be disabled, but as a safeguard
-    if (isOutputCollapsed) {
-        setIsOutputCollapsed(false);
-    }
+    setRightPanelTab('chat');
+
     const imageExport = canvasComponentRef.current?.exportToImage();
     if (!imageExport) {
       setError("There is nothing on the canvas to generate from.");
@@ -78,8 +92,8 @@ function App() {
       const { data: base64ImageData, mimeType } = imageExport;
             
       const prompt = generationMode === GenerationMode.CODE_LOGIC
-        ? getCodeLogicInstruction(language)
-        : getUIComponentInstruction(uiFramework);
+        ? getCodeLogicInstruction(language, activeFileContent || undefined)
+        : getUIComponentInstruction(uiFramework, activeFileContent || undefined);
       
       const images = [{ data: base64ImageData, mimeType: mimeType }];
       const result = await generateContent(prompt, images);
@@ -93,15 +107,12 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [language, generationMode, uiFramework, pages, activePageIndex, isOutputCollapsed, isImageAttached]);
+  }, [language, generationMode, uiFramework, activeFileContent, isImageAttached]);
   
   const handleSendMessage = useCallback(async (message: string, image?: { base64: string, mimeType: string }) => {
+    setRightPanelTab('chat');
     // If an image is attached, it's a new primary generation, not a follow-up.
     if (image) {
-      if (isOutputCollapsed) {
-        setIsOutputCollapsed(false);
-      }
-      
       const userMessage: ChatMessage = { role: 'user', content: message, image };
       setChatHistory([userMessage]); // Start a new chat session.
       setIsLoading(true);
@@ -109,8 +120,8 @@ function App() {
 
       try {
         const prompt = generationMode === GenerationMode.CODE_LOGIC
-          ? getCodeLogicInstruction(language)
-          : getUIComponentInstruction(uiFramework);
+          ? getCodeLogicInstruction(language, activeFileContent || undefined)
+          : getUIComponentInstruction(uiFramework, activeFileContent || undefined);
         
         const imagesToGemini = [{ data: image.base64, mimeType: image.mimeType }];
         const result = await generateContent(prompt, imagesToGemini);
@@ -141,7 +152,7 @@ function App() {
     
     try {
         const previousCode = lastModelMessage?.content || "No previous code available.";
-        const prompt = getFollowUpInstruction(previousCode, message);
+        const prompt = getFollowUpInstruction(previousCode, message, activeFileContent || undefined);
         
         const result = await generateContent(prompt, []);
 
@@ -155,7 +166,7 @@ function App() {
         setIsLoading(false);
     }
 
-  }, [chatHistory, generationMode, language, uiFramework, isOutputCollapsed]);
+  }, [chatHistory, generationMode, language, uiFramework, activeFileContent]);
 
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -269,6 +280,23 @@ function App() {
     setActivePageIndex(index);
   };
 
+  const RightPanelTabButton: React.FC<{
+    label: string; 
+    icon: React.ReactNode; 
+    tabName: 'chat' | 'files';
+  }> = ({ label, icon, tabName }) => (
+    <button
+      onClick={() => setRightPanelTab(tabName)}
+      className={`px-3 py-1.5 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+        rightPanelTab === tabName
+        ? 'border-blue-500 text-blue-600'
+        : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-t-md'
+      }`}
+    >
+      {icon} {label}
+    </button>
+  );
+
   return (
     <div className="flex flex-col h-screen w-screen bg-gray-100 font-sans overflow-hidden">
       <Header
@@ -276,8 +304,11 @@ function App() {
         isGenerating={isLoading && chatHistory.length === 0}
         onClear={handleClearCanvas}
         isOutputCollapsed={isOutputCollapsed}
-        onToggleOutput={() => setIsOutputCollapsed(!isOutputCollapsed)}
+        onToggleOutput={toggleOutput}
         isGenerateDisabled={isImageAttached || isLoading}
+        isFolderOpen={isFolderOpen}
+        folderName={folderName}
+        onOpenFolder={() => setRightPanelTab('files')}
       />
       <div className="flex flex-1 min-h-0">
         <LeftSidebar
@@ -348,20 +379,46 @@ function App() {
             bg-white border-l border-gray-200
             ${isOutputCollapsed ? 'w-0 border-l-0' : 'w-[35%] max-w-[600px]'}
         `}>
-            <div className={`h-full w-full p-2 overflow-hidden transition-opacity duration-200 ${isOutputCollapsed ? 'opacity-0' : 'opacity-100'}`}>
-                <OutputDisplay
-                    chatHistory={chatHistory}
-                    isLoading={isLoading}
-                    error={error}
-                    onSendMessage={handleSendMessage}
-                    onImageAttach={() => {
-                        setIsImageAttached(true);
-                        setChatHistory([]);
-                        setError(null);
-                    }}
-                    onImageRemove={() => setIsImageAttached(false)}
-                />
+          <div className={`h-full w-full flex flex-col overflow-hidden transition-opacity duration-200 ${isOutputCollapsed ? 'opacity-0' : 'opacity-100'}`}>
+            <div className="flex-shrink-0 h-12 flex items-center gap-2 px-2 border-b border-gray-200">
+                <RightPanelTabButton label="Chat" tabName="chat" icon={<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20.94c1.5 0 2.85-.93 3.34-2.25 .14-.37.14-.78.14-1.19 0-2.21-1.79-4-4-4s-4 1.79-4 4c0 .41 0 .82.14 1.19.49 1.32 1.84 2.25 3.34 2.25z"/><path d="M16 10.5c0-2.21-1.79-4-4-4s-4 1.79-4 4c0 .41 0 .82.14 1.19.49 1.32 1.84 2.25 3.34 2.25s2.85-.93 3.34-2.25c.14-.37.14-.78.14-1.19z"/><path d="M18.5 4.5a4 4 0 1 0 0 8 4 4 0 1 0 0-8z"/><path d="M5.5 4.5a4 4 0 1 0 0 8 4 4 0 1 0 0-8z"/></svg>} />
+                <RightPanelTabButton label="Files" tabName="files" icon={<FolderIcon className="w-5 h-5"/>}/>
             </div>
+            <div className="flex-grow min-h-0">
+                {rightPanelTab === 'chat' && (
+                    <div className="h-full w-full p-2">
+                        <OutputDisplay
+                            chatHistory={chatHistory}
+                            isLoading={isLoading}
+                            error={error}
+                            onSendMessage={handleSendMessage}
+                            onImageAttach={() => {
+                                setIsImageAttached(true);
+                                setChatHistory([]);
+                                setError(null);
+                            }}
+                            onImageRemove={() => setIsImageAttached(false)}
+                        />
+                    </div>
+                )}
+                {rightPanelTab === 'files' && (
+                    <FilePanel
+                        isFolderOpen={isFolderOpen}
+                        folderName={folderName}
+                        onFolderOpen={(name, _tree) => {
+                            setIsFolderOpen(true);
+                            setFolderName(name);
+                        }}
+                        onFolderClose={() => {
+                            setIsFolderOpen(false);
+                            setFolderName('');
+                            setActiveFileContent(null);
+                        }}
+                        onFileOpen={(content) => setActiveFileContent(content)}
+                    />
+                )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -1,26 +1,46 @@
 import React from 'react';
 
-export const getCodeLogicInstruction = (language: string) => `You are an expert programmer and logic interpreter.
+export const getCodeLogicInstruction = (language: string, fileContent?: string) => `You are an expert programmer and logic interpreter.
 Analyze the user-drawn diagram, flowchart, or state machine.
-Interpret the logical flow, conditions, and actions depicted.
-Translate this logic into a concise and functional code snippet in the ${language} programming language.
-The output must be ONLY the code, enclosed in a single markdown block. Do not include any explanatory text before or after the code block.
-Focus on implementing the underlying logic, not on visually recreating the diagram.
-For example, if the diagram shows a condition 'age > 51' leading to 'Denied' on true and 'Success' on false, the output should be an if-else statement reflecting that logic.`;
+The user has also provided the content of a file from their repository for context.
 
-export const getUIComponentInstruction = (framework: string) => `You are an expert frontend developer specializing in ${framework}.
+CONTEXT FILE CONTENT:
+---
+${fileContent || "No file content provided."}
+---
+
+Your main task is to interpret the logical flow, conditions, and actions from the diagram and translate it into a concise and functional code snippet in the ${language} programming language.
+If the user's request seems to reference the file content (e.g., asking to add or modify a function), use the diagram as a guide to implement that change within the context of the file.
+The output must be ONLY the code, enclosed in a single markdown block. Do not include any explanatory text before or after the code block.
+Focus on implementing the underlying logic, not on visually recreating the diagram.`;
+
+export const getUIComponentInstruction = (framework: string, fileContent?: string) => `You are an expert frontend developer specializing in ${framework}.
 Analyze the user-drawn wireframe or diagram.
-Convert the visual elements (shapes, text, layout) into a functional, self-contained UI component using ${framework}.
+The user has also provided the content of a file from their repository for context.
+
+CONTEXT FILE CONTENT:
+---
+${fileContent || "No file content provided."}
+---
+
+Your main task is to convert the visual elements from the diagram into a functional, self-contained UI component using ${framework}.
+If the user's request seems to reference the file content, use the diagram as a guide to modify the existing code.
 To facilitate a live preview, please ensure the final output is a single, self-contained HTML file.
 - For 'HTML/CSS', this is straightforward.
 - For frameworks like 'React', 'Vue', or 'Svelte', use a script tag to pull the framework from a CDN (e.g., unpkg) and include the component code within a script tag in the HTML body. The component should be immediately rendered to the page.
 The output must be ONLY the code for this single HTML file, enclosed in a single markdown block. Do not include any explanatory text before or after the code block.
 Make reasonable assumptions about styling and structure to create a visually appealing and functional component that mirrors the drawing.`;
 
-export const getFollowUpInstruction = (previousCode: string, userRequest: string) => `You are an expert programmer AI assistant.
+export const getFollowUpInstruction = (previousCode: string, userRequest: string, fileContent?: string) => `You are an expert programmer AI assistant.
 The user has provided some existing code that was generated from a drawing or a previous request.
+They have also provided the content of a file from their repository for context.
 Now, the user has a follow-up request to modify or explain that code.
 The user may also provide an image for context with their follow-up request. Analyze it if present.
+
+CONTEXT FILE CONTENT:
+---
+${fileContent || "No file content provided."}
+---
 
 PREVIOUS CODE:
 ---
@@ -32,7 +52,7 @@ USER REQUEST:
 ${userRequest}
 ---
 
-Your task is to fulfill the user's request based on the previous code and any new images.
+Your task is to fulfill the user's request based on the previous code, the context file, and any new images.
 - If they ask for a change, provide the full, updated code snippet.
 - If they ask for an explanation, provide a clear and concise answer.
 - If they ask to add comments, add the comments to the code.
@@ -124,7 +144,6 @@ export const PanelRightIcon: React.FC<{className?: string; isActive?: boolean}> 
     </svg>
 );
 
-
 export const SendIcon: React.FC<{className?: string}> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
         <path d="m22 2-7 20-4-9-9-4Z"/>
@@ -135,5 +154,11 @@ export const SendIcon: React.FC<{className?: string}> = ({ className }) => (
 export const AttachmentIcon: React.FC<{className?: string}> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
         <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.59a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+    </svg>
+);
+
+export const FolderIcon: React.FC<{className?: string}> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
     </svg>
 );

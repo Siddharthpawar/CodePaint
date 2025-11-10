@@ -1,3 +1,5 @@
+import { FileSystemHandle } from 'native-file-system-adapter';
+
 export enum Tool {
   PENCIL = 'PENCIL',
   RECTANGLE = 'RECTANGLE',
@@ -50,7 +52,7 @@ export type DrawingObject = PencilDrawing | ShapeDrawing | TextDrawing;
 
 // --- New Canvas Page Type ---
 export type CanvasPage = {
-  id: string;
+  id:string;
   name: string;
   objects: DrawingObject[];
 };
@@ -65,4 +67,14 @@ export type ChatMessage = {
     mimeType: string;
   };
   generationMode?: GenerationMode;
+};
+
+// --- GitHub Integration Types ---
+
+export type FileTreeNode = {
+    path: string;
+    name: string;
+    type: 'file' | 'directory';
+    children?: FileTreeNode[];
+    handle: FileSystemHandle;
 };
